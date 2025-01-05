@@ -2,20 +2,38 @@ from groq import Groq
 import os
 import asyncio
 from pymongo import MongoClient
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 MONGO_URI = os.environ.get('MONGO_URI', "mongodb+srv://sakshamrohatgi10:Saksham123@cluster0.3pfxs.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 DATABASE_NAME = "text_files_db"
 COLLECTION_NAME = "files"
 
-client = MongoClient(MONGO_URI)
-db = client[DATABASE_NAME]
-collection = db[COLLECTION_NAME]
-
+try:
+    client = MongoClient(MONGO_URI)
+    db = client[DATABASE_NAME]
+    collection = db[COLLECTION_NAME]
+    # Test the connection
+    client.admin.command('ping')
+    logger.info("Successfully connected to MongoDB")
+except Exception as e:
+    logger.error(f"Error connecting to MongoDB: {str(e)}")
+    raise
 
 def get_llama_response(user_prompt):
-    client = Groq(api_key=os.environ.get('GROQ_API_KEY', "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"))
+    try:
+        api_key = os.environ.get('GROQ_API_KEY')
+        if not api_key:
+            logger.error("GROQ_API_KEY not found in environment variables")
+            raise ValueError("GROQ_API_KEY not found")
+            
+        client = Groq(api_key=api_key)
+        logger.info("Making Groq API call...")
 
-    fixed_prefix = """
+        fixed_prefix = """
             This is a two-step process:
             1. Extract EXACT keywords from the input question that could be a course identifier. The keywords must appear in the question exactly as you extract them - do not modify, reword or interpret them. Examples:
             - Question: "Who teaches CHEM F111?" → Extract: CHEM F111
@@ -240,31 +258,35 @@ def get_llama_response(user_prompt):
             
             """
 
-    completion = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {
-                "role": "system",
-                "content": fixed_prefix
-            },
-            {
-                "role": "user",
-                "content": user_prompt
-            }
-        ],
-        temperature=1,
-        max_tokens=1024,
-        top_p=1,
-        stream=True
-    )
-    temp_filename = "llama_response.txt"
-    with open(temp_filename, "w") as file:
+        completion = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": fixed_prefix
+                },
+                {
+                    "role": "user",
+                    "content": user_prompt
+                }
+            ],
+            temperature=1,
+            max_tokens=1024,
+            top_p=1,
+            stream=True
+        )
+        
+        response_text = ""
         for chunk in completion:
-            file.write(chunk.choices[0].delta.content or "")
-    with open(temp_filename, "r") as file:
-        response = file.read()
-    os.remove(temp_filename)
-    return response
+            if chunk.choices[0].delta.content:
+                response_text += chunk.choices[0].delta.content
+        
+        logger.info("Successfully received Groq API response")
+        return response_text
+        
+    except Exception as e:
+        logger.error(f"Error in get_llama_response: {str(e)}")
+        raise
 
 
 def parse_response(response):
@@ -288,23 +310,17 @@ def parse_response(response):
 
 async def perform_similarity_search(collection, query):
     try:
+        logger.info(f"Searching for document with filename: {query}")
         result = collection.find_one({"filename": query})
         if result:
+            logger.info(f"Found matching document: {result['filename']}")
             return [result["filename"]], [result["content"]]
         else:
+            logger.info("No matching document found")
             return [], []
     except Exception as e:
-        print(f"Error during similarity search: {e}")
-        return [], []
-    # except Exception as e:
-    #     print(f"Error retrieving file from MongoDB: {e}")
-    #     if results and "documents" in results and results["documents"] and results["documents"][0]:
-    #         return results["documents"][0], results["metadatas"][0], results["distances"][0]
-    #     else:
-    #         return None, None, None
-    # except Exception as e:
-    #     print(f"Error during similarity search: {e}")
-    #     return None, None, None
+        logger.error(f"Error during similarity search: {str(e)}")
+        raise
 
 #
 # def retrieve_file_by_filename(filename):
@@ -353,44 +369,54 @@ async def perform_refined_llama_call(metadata_list, user_prompt):
 
 
 async def process_query(user_prompt, previous_matches=None):
-    llama_response = get_llama_response(user_prompt)
-    extracted, matches = parse_response(llama_response)
-    all_results = []
-    metadata_list = []
-    search_tasks = []
-    refined_response = None
+    try:
+        logger.info(f"Processing query: {user_prompt}")
+        llama_response = get_llama_response(user_prompt)
+        logger.info(f"LLaMA response: {llama_response}")
+        
+        extracted, matches = parse_response(llama_response)
+        logger.info(f"Extracted: {extracted}, Matches: {matches}")
+        
+        all_results = []
+        metadata_list = []
+        search_tasks = []
+        refined_response = None
 
-    if extracted and "None" not in extracted:
-        if matches and "None" not in matches:
-            for match in matches:
+        if extracted and "None" not in extracted:
+            if matches and "None" not in matches:
+                for match in matches:
+                    search_tasks.append(perform_similarity_search(collection, match))
+            else:
+                logger.info("Requested course(s) are not valid.")
+                return [], None, None
+
+        elif previous_matches:
+            logger.info("Using previous matches")
+            for match in previous_matches:
                 search_tasks.append(perform_similarity_search(collection, match))
         else:
-            print("Requested course(s) are not valid.")
+            logger.info("No matches found")
             return [], None, None
 
-    elif previous_matches:
-        print("No matches found for current prompt. Using previous prompt's matches.")
-        for match in previous_matches:
-            search_tasks.append(perform_similarity_search(collection, match))
-    else:
-        print("No matches found.")
-        return [], None, None
+        if search_tasks:
+            search_results = await asyncio.gather(*search_tasks)
+            for documents, metadatas in search_results:
+                if documents:
+                    for i, doc in enumerate(documents):
+                        metadata_list.append(metadatas[i])
+                        all_results.append({
+                            "document": doc,
+                            "metadata": metadatas[i],
+                        })
 
-    if search_tasks:
-        search_results = await asyncio.gather(*search_tasks)
-        for documents, metadatas in search_results:
-            if documents:
-                for i, doc in enumerate(documents):
-                    metadata_list.append(metadatas[i])
-                    all_results.append({
-                        "document": doc,
-                        "metadata": metadatas[i],
-                    })
+        if metadata_list:
+            refined_response = await perform_refined_llama_call(metadata_list, user_prompt)
 
-    if metadata_list:
-        refined_response = await perform_refined_llama_call(metadata_list, user_prompt)
-
-    return all_results, matches, refined_response
+        return all_results, matches, refined_response
+        
+    except Exception as e:
+        logger.error(f"Error in process_query: {str(e)}")
+        raise
 
 
 
