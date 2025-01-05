@@ -1,6 +1,5 @@
 from groq import Groq
 import os
-import chromadb
 import asyncio
 from pymongo import MongoClient
 
@@ -11,14 +10,6 @@ COLLECTION_NAME = "files"
 client = MongoClient(MONGO_URI)
 db = client[DATABASE_NAME]
 collection = db[COLLECTION_NAME]
-# Initialize Chroma HTTP Client
-# client_chroma = chromadb.HttpClient()
-# collection_name = "Handbot2"
-# try:
-#     collection = client_chroma.get_collection(collection_name)
-# except ValueError:
-#     print(f"Collection '{collection_name}' not found. Please create it first.")
-#     exit()
 
 
 def get_llama_response(user_prompt):
