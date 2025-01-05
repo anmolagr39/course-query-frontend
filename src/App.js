@@ -3,12 +3,10 @@ import {
   Container, 
   Paper, 
   TextField, 
-  Button, 
   Box,
   Typography,
   CircularProgress,
-  IconButton,
-  useTheme
+  IconButton
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import SchoolIcon from '@mui/icons-material/School';
@@ -19,7 +17,6 @@ function App() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
-  const theme = useTheme();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
