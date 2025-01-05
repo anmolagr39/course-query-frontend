@@ -4,7 +4,7 @@ import chromadb
 import asyncio
 from pymongo import MongoClient
 
-MONGO_URI = "mongodb+srv://sakshamrohatgi10:Saksham123@cluster0.3pfxs.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"  # Replace with your MongoDB URI
+MONGO_URI = os.environ.get('MONGO_URI', "mongodb+srv://sakshamrohatgi10:Saksham123@cluster0.3pfxs.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 DATABASE_NAME = "text_files_db"
 COLLECTION_NAME = "files"
 
@@ -22,8 +22,7 @@ collection = db[COLLECTION_NAME]
 
 
 def get_llama_response(user_prompt):
-    client = Groq(
-        api_key="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")  # Replace with your actual API key
+    client = Groq(api_key=os.environ.get('GROQ_API_KEY', "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"))
 
     fixed_prefix = """
             This is a two-step process:
