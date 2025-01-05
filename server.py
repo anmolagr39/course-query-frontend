@@ -2,12 +2,17 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import asyncio
 from hand import process_query
+import os
 
-app = Flask(__name__)
-CORS(app, resources={r"/query": {"origins": "http://localhost:3000"}})
+app = Flask(__name__, static_folder='build', static_url_path='/')
+CORS(app)
 
 # Store previous matches in server memory
 previous_matches = None
+
+@app.route('/')
+def index():
+    return app.send_static_file('index.html')
 
 @app.route('/query', methods=['POST'])
 def handle_query():
@@ -47,4 +52,5 @@ def handle_query():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000) 
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port) 
