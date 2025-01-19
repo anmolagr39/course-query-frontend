@@ -1,3 +1,7 @@
+ABOUT:
+This is a chatbot for all course related info for BITS Pilani Students
+
+
 # Getting Started with Create React App
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
